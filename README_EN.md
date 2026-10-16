@@ -2,112 +2,173 @@
 
 [中文](README.md) | **English**
 
-Adds a built-in **OpenAI model provider** to the [ZCode](https://zcode.z.ai) desktop app for Windows. Sign in with a ChatGPT subscription through OAuth and use the GPT models currently enabled for that account without changing the existing Z.ai or BigModel application identity.
+Adds a built-in **OpenAI model provider** to the ZCode desktop app. Sign in with a ChatGPT subscription through OAuth and use the GPT models enabled for that account without replacing the existing Z.ai / BigModel application identity.
 
-Verified versions: ZCode **3.10.2, 3.11.2, 3.14.3, 3.14.5, and 3.15.3**. The patcher selects an exact-version compatibility profile; unknown versions are never attempted silently in deploy mode.
+## Platform status
 
-## Quick Start
+| Platform | Status |
+|---|---|
+| Windows | Supported by the original static/runtime patch flows |
+| Linux AppImage | Supported by the isolated AppDir flow in `patch-linux.sh` |
+
+### Verified versions
+
+**Windows profiles:** ZCode **3.10.2, 3.11.2, 3.14.3, 3.14.5, 3.15.3**.
+
+**Linux end-to-end:** ZCode **3.15.3 AppImage** on **Fedora Linux 44 x86-64**, Node.js **22.23.1**. The real test passed the 25/25 compatibility probe, full patch/repack dry-run, patched AppDir launch, OpenAI provider UI, browser OAuth, model connection, and preservation of existing MCP/skill discovery.
+
+A profile being verified on Windows does not automatically make its Linux bundle verified. Linux releases should pass the same probe, dry-run and runtime test before being listed as verified.
+
+## Linux / AppImage quick start
+
+The Linux flow **never modifies the official AppImage**. It extracts a temporary copy, validates the exact-version profile, creates a separate patched AppDir, and keeps the previous patched AppDir for rollback.
+
+```bash
+git clone https://github.com/unsocialz2/zcode-openai-oauth.git
+cd zcode-openai-oauth
+
+bash patch-linux.sh --probe
+bash patch-linux.sh --dry-run
+bash patch-linux.sh --install
+zcode-openai-oauth
+```
+
+Default source AppImage:
+
+```text
+~/.local/bin/zcode.AppImage
+```
+
+Default patched build:
+
+```text
+~/.local/share/zcode-openai-oauth/ZCode.AppDir
+```
+
+Default launcher:
+
+```text
+~/.local/bin/zcode-openai-oauth
+```
+
+After launch, open **Settings -> Model Providers -> OpenAI -> Connect OpenAI** and complete authorization in the browser.
+
+For custom AppImage locations:
+
+```bash
+bash patch-linux.sh --probe --appimage /path/to/ZCode.AppImage
+```
+
+See [LINUX.md](LINUX.md) for the full Linux workflow.
+
+## Safe Linux updates
+
+The helper records the source AppImage hash and the installed ZCode version.
+
+```bash
+bash patch-linux.sh --status
+```
+
+After replacing the official AppImage with a newer ZCode release:
+
+```bash
+bash patch-linux.sh --probe
+bash patch-linux.sh --update
+```
+
+If the new release has no verified profile or any required structure changed, the probe fails closed and the currently working patched AppDir is left untouched.
+
+Rollback to the previous patched AppDir:
+
+```bash
+bash patch-linux.sh --rollback
+```
+
+This makes updates safer, but it does **not** remove the exact-version compatibility requirement. Major ZCode changes can still require a new profile.
+
+## Windows quick start
 
 ```bat
-git clone https://github.com/Bascter-Main/zcode-openai-oauth.git
+git clone https://github.com/unsocialz2/zcode-openai-oauth.git
 cd zcode-openai-oauth
 patch.bat
 ```
 
-`patch.bat` requires Node.js 18 or later and installs the small asar packaging dependency from the lockfile on its first run. It then extracts `app.asar`, applies uniquely validated content-anchor patches, checks every modified JavaScript file, repackages the application, closes ZCode, deploys both runtime components transactionally, and restarts ZCode.
+`patch.bat` requires Node.js 18 or later. It installs the pinned asar dependency, extracts `app.asar`, applies the verified profile, checks modified JavaScript, repacks, deploys both runtime components transactionally, and restarts ZCode.
 
-After ZCode restarts, open **Settings → Model Providers → OpenAI → Connect** and complete authorization in the browser. OpenAI appears as a dedicated group in both settings and the model picker. Its model list is fetched **dynamically** from the Codex catalog and reflects the subscription and workspace entitlements of the connected account, including GPT-6 Sol, Astra, and Luna when enabled.
-
-Additional commands:
+Useful Windows/static-patcher commands:
 
 ```bat
-node patch.js --probe        :: Read-only compatibility inspection (does not modify the install or restart ZCode)
-node patch.js --dry-run      :: Fully patch and repack a precisely supported version without writing to the install
-node patch.js --no-deploy    :: Produce validated .patched files without deploying them
-node patch.js --self-test    :: Run the patcher's fixture and behavior checks
-node patch.js --restore      :: Restore pristine files from the hash-verified same-version backup
-node patch.js --dir <path>   :: Use a custom ZCode installation directory
+node patch.js --probe
+node patch.js --dry-run
+node patch.js --no-deploy
+node patch.js --self-test
+node patch.js --restore
+node patch.js --dir <path>
 ```
 
-**After a ZCode upgrade:** the official updater will overwrite the patch. Run `patch.bat` again after the upgrade. The patch uses content anchors plus exact-version profiles instead of fixed byte offsets; every anchor must match exactly once. If ZCode changes the relevant implementation, the patcher reports the affected target/anchor and aborts without deploying a partially patched package.
+## Current features
 
-### Current features
+- OpenAI is a dedicated top-level provider and does not replace the Z.ai / BigModel application account.
+- Connect and disconnect actions are available from the OpenAI provider page.
+- The model list is fetched dynamically from the Codex catalog and follows the connected account/workspace entitlements.
+- Managed provider identity, endpoint and OAuth credential fields are protected from accidental editing while model management remains available.
+- User-added models, explicit manual rules, context-window overrides, order and unrelated provider settings are preserved during catalog refresh.
+- Catalog sync occurs after connection, at startup, after token refresh and on manual provider refresh.
+- The Codex client version is discovered from public `@openai/codex` metadata and cached.
+- Requests use the Responses API compatibility behavior required by the subscription backend, including `store:false` and streaming.
 
-- OpenAI is a dedicated top-level settings group between Z.ai and custom providers. Connecting it never replaces the Z.ai or BigModel account shown by ZCode.
-- The OpenAI detail page shows OAuth connection status with **Connect OpenAI** and **Disconnect** actions. The navigation entry remains available after disconnecting so the account can be connected again.
-- Managed provider identity, Base URL, API format, and OAuth credential fields are hidden. The provider enabled switch and model management remain available.
-- Models can be added, edited, enabled, disabled, deleted, and reordered. Online refresh preserves user-added models, explicit manual rules, context-window overrides, and unrelated provider settings.
-- The Codex catalog synchronizes after the first connection, at startup, after token refresh, and from the existing manual refresh action on the Model Providers page. Managed models follow server-side availability and account entitlements.
-- The Codex client version is discovered from the public stable `@openai/codex` metadata and cached. Offline sync uses the last successful version or a verified compatibility baseline so an obsolete catalog version does not hide newly released models.
+## Compatibility policy
 
-### Version compatibility policy
+The project intentionally fails closed.
 
-- **Verified versions:** the profile matches the exact version and all anchors, syntax checks, postconditions, critical data-flow invariants, and the isolated repack pass before deployment is allowed.
-- **Structural candidates:** `--probe` reports which semantic transforms still locate and which exact anchors failed. The report is migration evidence only and never creates a deployable profile.
-- **Unknown versions:** deploy and restore fail explicitly because no verified profile exists. Minified identifiers are not guessed and fuzzy replacement is never attempted.
-- **Adding a profile:** a version is indexed only after its pristine `app.asar` and `resources/glm/zcode.cjs` are available, the actual bindings used by large host/renderer injections are reviewed again, and the complete test matrix passes. Version wildcards such as `3.10.x` are not used.
+- **Verified versions:** exact profile identity plus required anchors/resolvers, syntax checks, postconditions, critical invariants and isolated repack must pass.
+- **Structural candidates:** `--probe` can show what still locates on a new version, but it does not turn that version into a deployable profile.
+- **Unknown versions:** install/update/deploy is refused until a verified profile exists.
+- **No fuzzy patching:** minified identifiers are not guessed and ambiguous matches are rejected.
 
-## Runtime patch mode (experimental)
+The newer profiles use structural resolvers where possible, while older profiles may use semantic transforms plus exact anchors. This reduces maintenance across small minifier changes, but it cannot guarantee compatibility with arbitrary future ZCode releases.
 
-The default flow writes the patch into `app.asar` at deploy time. Runtime mode leaves the original bundles untouched: after extraction, the same profile is applied **at load time** — main/host/scheduler through module loader hooks, the renderer through protocol-level response rewriting. Load-time targets can degrade independently and record failed sites. Preloads and the agent runtime cannot be intercepted at load time, so they are flat-patched in strict mode during installation (with `.rt-pristine` backups); any strict validation failure aborts the installation.
+## Runtime patch mode on Windows (experimental)
+
+The repository also contains the original runtime-patch mode for Windows. It applies supported transforms at load time where possible and retains strict flat patches for components that cannot be intercepted safely.
 
 ```bat
-:: Install (fully exit ZCode from the tray first; the installer refuses to write while the target runs)
-:: If the static patch was applied before, run node patch.js --restore first
 node runtime/install-runtime.js --dir "D:\Program Files\ZCode"
-
-:: Restart ZCode after installation, wait for the main window, then verify the current install generation
-:: Verifying without a restart reports that requirement instead of comparing stale-process hashes
 node runtime/verify-runtime.js --dir "D:\Program Files\ZCode"
-
-:: Uninstall (close ZCode first)
 node runtime/install-runtime.js --dir "D:\Program Files\ZCode" --restore
 ```
 
-Delivery details are recorded in `resources/app/out/.zcode-runtime/runtime.log` (per-target anchor hits, postcondition and critical-invariant results, delivered content hashes).
-
-**After an official upgrade:** the updater restores a new `app.asar` while the extracted directory still holds the previous version. Rerunning `install-runtime.js` detects this: when the new version is supported, it rebuilds the extraction from the new asar and reapplies the patch; when it is not, it leaves everything untouched and reports that (ZCode keeps running the previous extraction until support lands or you `--restore`).
-
-## Transform Framework
-
-Patches are more than text replacement. Each exact-version profile selects a strict location mechanism:
-
-| Mechanism | Versions | Behavior |
-|---|---|---|
-| Semantic transforms plus exact anchors | 3.10.2 and 3.11.2 | `transforms/registry.json` captures minified bindings. Semantic output must be byte-identical to the verified anchor output or deployment is rejected. |
-| Semantic resolvers | 3.14.3 | `patch-core.cjs` locates host and renderer logic from retained function names, structure, and strings. Every resolver must match exactly once or fail closed. |
-| Strict postconditions and critical invariants | All profiles | Final bundles are checked for OAuth registration, account isolation, catalog synchronization, connect/disconnect behavior, settings groups, model-menu presentation, and request compatibility. |
-
-`--probe` runs the same location, syntax, postcondition, and critical-invariant checks against the current installation without producing deployable output. Older transform profiles can fall back from semantic location to an exact anchor; resolver-only profiles require a unique structural match. If any required site cannot be verified, the patcher aborts without writing installation files.
-
-## How It Works
+## How it works
 
 | Layer | Implementation |
 |---|---|
-| OAuth | Uses the public Codex CLI client (`app_EMoamEEZ73f0CkXaXp7hrann`) with PKCE S256. A local loopback server at `127.0.0.1:1455` receives the callback and completes the token exchange in the host process. Tokens refresh automatically. |
-| Model catalog | Calls `GET chatgpt.com/backend-api/codex/models` with the bearer token, `OpenAI-Beta: responses=experimental`, and `chatgpt-account-id`. It synchronizes after connection, at startup, after token refresh, and on manual refresh. The catalog client version is discovered and cached; failures keep the existing configuration intact. |
-| Model merge | Server-managed models follow catalog and entitlement changes, while user-added models, explicit rules, context overrides, order, and unrelated provider settings are preserved. |
-| Requests | Uses the Responses API with the required `store:false` and `stream:true` settings and removes parameters or reasoning levels unsupported by the subscription backend. |
-| Compatibility add-on | OpenAI-compatible chat-completions endpoints use `reasoning_effort` instead of the unsupported `thinking` field; Anthropic reasoning configuration remains unchanged. |
-| UI | Adds dedicated OpenAI settings/model groups, the official OpenAI logo, and connect/disconnect controls. Managed connection fields are hidden while model editing remains available. |
+| OAuth | Public Codex CLI client with PKCE S256 and loopback callback on `127.0.0.1:1455` |
+| Model catalog | Reads the ChatGPT/Codex model catalog using the connected account token and account ID |
+| Model merge | Server-managed catalog entries are synchronized while user-managed rules are preserved |
+| Requests | Responses API compatibility path with subscription-backend-safe parameters |
+| UI | Dedicated OpenAI provider/settings/model groups and connect/disconnect controls |
+| Linux packaging | Official AppImage -> temporary extraction -> strict probe/patch/repack -> separate patched AppDir |
 
-## Files
+## Repository layout
 
-- `patch.js` — version-independent patch engine (profile selection, extraction, patching, validation, repacking, probing, deployment, and restart)
-- `patch-core.cjs` — patch core shared by the static patcher and runtime mode (semantic transforms, resolvers, content anchors, and critical invariants)
-- `runtime/` — runtime patch mode: load-time transforms (bootstrap, loader hooks, protocol rewriting) plus install/verify scripts
-- `profiles/index.json` — exact ZCode version to compatibility profile mapping
-- `profiles/<version>/profile.json` — target, marker, postcondition, and spec-checksum configuration
-- `profiles/<version>/patch-spec.json` — resolver or content-anchor patches for target bundles inside `app.asar`
-- `profiles/<version>/glm-spec.json` — resolver or content-anchor patches for the agent runtime at `resources/glm/zcode.cjs`
-- `transforms/registry.json` — semantic transform definitions (version-tolerant site location and insertion templates)
-- `package.json` / `package-lock.json` — locks the asar dependency version used by the patcher
-- `patch.bat` — Windows double-click entry point; installs dependencies automatically on first run
+- `patch.js` — core static patch engine, profiles, probing, repacking and Windows deployment
+- `patch-core.cjs` — shared semantic transforms, structural resolvers and critical invariants
+- `profiles/` — exact-version compatibility profiles
+- `transforms/` — semantic transform definitions
+- `runtime/` — experimental Windows runtime-patch mode
+- `linux-appimage.js` — Linux/AppImage extraction, validation, install, status, update and rollback helper
+- `patch-linux.sh` — Linux entry point that installs pinned dependencies when needed
+- `LINUX.md` — Linux-specific documentation and tested matrix
+
+## CI
+
+Linux CI validates the Linux helper syntax, shell entry point, help surface and the patcher's fixture/behavior self-tests on Node 22.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Disclaimer
 
-This project is intended for learning and research. It uses the public Codex CLI OAuth client and observed API behavior. Follow the OpenAI and ZCode terms of service. You are responsible for any account-related consequences of using this patch.
+This project is intended for learning and research. It uses the public Codex CLI OAuth client and observed ChatGPT/Codex backend behavior rather than the normal OpenAI API billing path. Follow OpenAI and ZCode terms of service. Undocumented behavior may change, and you are responsible for account-related consequences of using the patch.
