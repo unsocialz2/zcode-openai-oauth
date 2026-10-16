@@ -186,7 +186,7 @@ function main() {
   const outputDir = path.resolve(expandHome(argValue('--output-dir') ||
     path.join(os.homedir(), '.local', 'share', 'zcode-openai-oauth', 'ZCode.AppDir')));
   const launcherPath = path.resolve(expandHome(argValue('--launcher') ||
-    path.join(os.homedir(), '.local', 'bin', 'zcode-openai-oauth'));
+    path.join(os.homedir(), '.local', 'bin', 'zcode-openai-oauth')));
 
   if (args.includes('--launch-only')) {
     launch(outputDir);
