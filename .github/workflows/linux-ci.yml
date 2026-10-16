@@ -1,0 +1,26 @@
+name: Linux patcher checks
+
+on:
+  push:
+    branches:
+      - linux-appimage-support
+      - main
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: node --check linux-appimage.js
+      - run: bash -n patch-linux.sh
+      - run: node linux-appimage.js --help
+      - run: bash patch-linux.sh --help
+      - run: npm run self-test
