@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - linux-appimage-support
+      - main
   pull_request:
 
 jobs:
@@ -20,4 +21,6 @@ jobs:
       - run: npm ci
       - run: node --check linux-appimage.js
       - run: bash -n patch-linux.sh
+      - run: node linux-appimage.js --help
+      - run: bash patch-linux.sh --help
       - run: npm run self-test
