@@ -5,6 +5,12 @@
   "engines": {
     "node": ">=18"
   },
+  "scripts": {
+    "self-test": "node patch.js --self-test",
+    "linux:probe": "node linux-appimage.js --probe",
+    "linux:dry-run": "node linux-appimage.js --dry-run",
+    "linux:install": "node linux-appimage.js --install"
+  },
   "dependencies": {
     "@electron/asar": "3.4.1"
   }
