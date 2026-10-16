@@ -45,7 +45,7 @@ function run(command, commandArgs, options = {}) {
   const result = spawnSync(command, commandArgs, {
     cwd: options.cwd,
     env: options.env || process.env,
-    stdio: 'inherit',
+    stdio: options.stdio || 'inherit',
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -74,7 +74,10 @@ function validateAppImage(appImage) {
 
 function extractAppImage(appImage, workDir) {
   console.log(`extracting AppImage: ${appImage}`);
-  run(appImage, ['--appimage-extract'], { cwd: workDir });
+  run(appImage, ['--appimage-extract'], {
+    cwd: workDir,
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
   const root = path.join(workDir, 'squashfs-root');
   const asarPath = path.join(root, 'resources', 'app.asar');
   const glmPath = path.join(root, 'resources', 'glm', 'zcode.cjs');
