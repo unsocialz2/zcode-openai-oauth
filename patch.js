@@ -28,6 +28,8 @@ const DRY = args.includes('--dry-run');
 const NO_DEPLOY = args.includes('--no-deploy');
 const RESTORE = args.includes('--restore');
 const PROBE = args.includes('--probe');
+const candidateIdx = args.indexOf('--candidate-profile');
+const CANDIDATE_PROFILE = candidateIdx >= 0 ? args[candidateIdx + 1] : null;
 const SELF_TEST = args.includes('--self-test');
 const dirIdx = args.indexOf('--dir');
 const REQUESTED_INSTALL = dirIdx >= 0 ? args[dirIdx + 1] : null;
@@ -1007,6 +1009,32 @@ function printProbeReport(version, reports) {
       ].join('; ');
       console.log(`  glm: ${report.glm.matched}/${report.glm.total}${detail ? ` — ${detail}` : ''}`);
     }
+  }
+}
+
+// Experimental cross-version validation is deliberately probe-only. Never adds
+// unknown versions to the verified deployable profile index.
+async function probeCandidateProfile(paths, installedVersion, templateVersion) {
+  const profile = loadProfile(templateVersion);
+  if (installedVersion === templateVersion) {
+    throw new Error('candidate profile testing requires a different installed version; use --probe');
+  }
+  const targetPaths = applyProfilePaths(paths, profile);
+  if (!fs.existsSync(targetPaths.GLM)) {
+    throw compatibilityError(`candidate GLM path missing: ${targetPaths.GLM}`);
+  }
+  console.log(`[CANDIDATE] ZCode ${installedVersion} with template ${profile.id}`);
+  console.log('[CANDIDATE] Checking all targets, invariants, syntax and a full isolated repack; no deployment.');
+  const prepared = await prepareProfile(targetPaths, installedVersion, profile, { repack: true });
+  try {
+    const total = profile.targets.reduce(
+      (sum, target) => sum + profile.appSpec[target.specKey].length,
+      profile.glmSpec.spans.length
+    );
+    console.log(`[CANDIDATE PASS] ${total}/${total} transforms, syntax, postconditions and repack validated.`);
+    console.log('[CANDIDATE ONLY] This is not a verified exact-version profile. Install/update remain disabled.');
+  } finally {
+    fs.rmSync(prepared.stageDir, { recursive: true, force: true });
   }
 }
 
@@ -2216,6 +2244,9 @@ function selfTest() {
 
 async function main() {
   if (SELF_TEST) return selfTest();
+  if (candidateIdx >= 0 && (!PROBE || !CANDIDATE_PROFILE || CANDIDATE_PROFILE.startsWith('--'))) {
+    throw new Error('--candidate-profile <verified-version> requires --probe and a valid template version');
+  }
   if (dirIdx >= 0 && !REQUESTED_INSTALL) throw new Error('--dir requires a path');
   if (PROBE && (DRY || NO_DEPLOY || RESTORE)) {
     throw new Error('--probe cannot be combined with --dry-run, --no-deploy, or --restore');
@@ -2235,6 +2266,7 @@ async function main() {
 
   const version = packageVersion(paths.ASAR);
   if (!version) throw new Error('could not read the installed ZCode package version');
+  if (PROBE && CANDIDATE_PROFILE) return probeCandidateProfile(paths, version, CANDIDATE_PROFILE);
   if (PROBE) return probeCompatibility(paths, version);
 
   const profile = loadProfile(version);
