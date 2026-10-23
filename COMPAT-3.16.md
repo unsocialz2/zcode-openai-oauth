@@ -1,40 +1,69 @@
-# ZCode 3.16.x compatibility investigation
+# ZCode 3.16.x compatibility
 
 ## Status
 
-- **3.16.2:** upstream patch engine and exact-version profile imported from [Bascter-Main/zcode-openai-oauth](https://github.com/Bascter-Main/zcode-openai-oauth). Linux/AppImage end-to-end behavior has not yet been validated.
-- **3.16.3:** **NOT VERIFIED** and intentionally **NOT deployable**. Do not run `--update` against 3.16.3 until a reviewed exact-version profile has passed all compatibility checks and an isolated runtime smoke test.
-- Existing 3.15.3 OAuth installation is not modified by any command below.
+| ZCode version | Static compatibility | Linux runtime |
+|---|---|---|
+| 3.16.2 | Upstream verified profile imported | Not verified on Fedora |
+| 3.16.3 | **26/26 strict candidate transforms, JS syntax, postconditions and isolated repack passed** on the real Fedora x64 AppImage | **Pending end-to-end OAuth and model/tool flow validation** |
 
-## What the first 3.16.3 probe found
+The 3.16.3 exact-version profile uses the same patch specifications as upstream 3.16.2. This is **intentional**: a separate `3.16.3` profile is registered only after its **actual AppImage** passed cross-version candidate validation. It is still strictly rechecked against the real binaries on every `--probe` or `--update`; the index contains no version wildcards.
 
-Using the 3.15.3 profile:
-- Host: 10/10 resolved
-- Renderer: 7/10 resolved
-- GLM: 5/5 resolved
-- Failed renderer resolvers: `openai.callbackIdentity`, `openai.connectCard`, `openai.hideManagedFields`
+## Fedora 44 / ZCode 3.16.3 field results
 
-Upstream 3.16.2 introduced new renderer handling (notably model-menu family presentation) and revised callback and connection UI matching. Before creating a 3.16.3 profile, test these newer changes against the **actual** 3.16.3 Linux AppImage.
+Test command:
 
-## Safe 3.16.3 candidate test on Fedora
+```bash
+bash patch-linux.sh --probe-candidate 3.16.2 \
+  --appimage "$HOME/Downloads/ZCode-3.16.3-linux-x64.AppImage"
+```
+
+Actual observed output:
+
+```text
+[CANDIDATE] ZCode 3.16.3 with template zcode-3.16.2
+[prepared] host.main (index.js): 10 spans
+[prepared] renderer.icons (styles-CQuzX8si.js): 11 spans
+[prepared] GLM: 5 spans
+packing staged app.asar...
+[CANDIDATE PASS] 26/26 transforms, syntax, postconditions and repack validated.
+[CANDIDATE ONLY] Source AppImage and installed ZCode were not modified.
+```
+
+## Upgrade the existing OAuth install
+
+1. Update the patcher, then run the strict **exact-profile** compatibility probe:
 
 ```bash
 cd ~/Downloads/zcode-openai-oauth-test
-git fetch origin
-git switch compat-zcode-3.16
-bash patch-linux.sh --probe-candidate 3.16.2 --appimage "$HOME/Downloads/ZCode-3.16.3-linux-x64.AppImage"
+git pull --ff-only
+bash patch-linux.sh --probe --appimage "$HOME/Downloads/ZCode-3.16.3-linux-x64.AppImage"
 ```
 
-This command:
-1. Extracts a temporary copy of the 3.16.3 AppImage.
-2. Applies the **3.16.2 profile as a candidate only**.
-3. Checks every resolver, JavaScript syntax, postcondition, critical semantic invariant and the final `app.asar` repack.
-4. Deletes temporary output.
+2. Only if the strict probe passes, close ZCode completely and replace the patched AppDir:
 
-**It does not register 3.16.3 as a verified version and cannot deploy or overwrite the official or patched app.** Exit code 0 only means the static candidate test passed; it is not proof that OAuth and model switching work at runtime.
+```bash
+bash patch-linux.sh --update --appimage "$HOME/Downloads/ZCode-3.16.3-linux-x64.AppImage"
+```
 
-If it passes, the next step is a dedicated 3.16.3 profile with strict tests and a **separately installed** smoke-test build. Keep the existing working version until the test is confirmed.
+3. Launch the patched app via `zcode-openai-oauth` or the mapped desktop icon. Verify:
+   - OpenAI provider and connection status.
+   - Browser OAuth/refresh, sending a message, model selection and model switching.
+   - MCP and skills availability.
+   - Original Z.ai provider still works.
 
-## Notes
+The helper validates before replacing the installed AppDir. The previous patched version is retained as `ZCode.AppDir.previous`. The original AppImage is **not** overwritten. The path used for the source AppImage is recorded in the installed build metadata.
 
-Keep candidate validation distinct from production deployment. The exact-version policy is intentional: minified app structures can change between patch releases, even if most of the anchors survive.
+If the new patched app fails, close it fully and restore the previous one:
+
+```bash
+bash patch-linux.sh --rollback
+```
+
+To check source status for the downloaded 3.16.3 AppImage, specify the same file:
+
+```bash
+bash patch-linux.sh --status --appimage "$HOME/Downloads/ZCode-3.16.3-linux-x64.AppImage"
+```
+
+Do not confuse a passing candidate probe with verified runtime operation; only field tests after update can establish end-to-end compatibility.
