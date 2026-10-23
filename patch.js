@@ -28,6 +28,8 @@ const DRY = args.includes('--dry-run');
 const NO_DEPLOY = args.includes('--no-deploy');
 const RESTORE = args.includes('--restore');
 const PROBE = args.includes('--probe');
+const candidateIdx = args.indexOf('--candidate-profile');
+const CANDIDATE_PROFILE = candidateIdx >= 0 ? args[candidateIdx + 1] : null;
 const SELF_TEST = args.includes('--self-test');
 const dirIdx = args.indexOf('--dir');
 const REQUESTED_INSTALL = dirIdx >= 0 ? args[dirIdx + 1] : null;
@@ -1010,6 +1012,32 @@ function printProbeReport(version, reports) {
   }
 }
 
+// Experimental cross-version validation is deliberately probe-only. Never adds
+// unknown versions to the verified deployable profile index.
+async function probeCandidateProfile(paths, installedVersion, templateVersion) {
+  const profile = loadProfile(templateVersion);
+  if (installedVersion === templateVersion) {
+    throw new Error('candidate profile testing requires a different installed version; use --probe');
+  }
+  const targetPaths = applyProfilePaths(paths, profile);
+  if (!fs.existsSync(targetPaths.GLM)) {
+    throw compatibilityError(`candidate GLM path missing: ${targetPaths.GLM}`);
+  }
+  console.log(`[CANDIDATE] ZCode ${installedVersion} with template ${profile.id}`);
+  console.log('[CANDIDATE] Checking all targets, invariants, syntax and a full isolated repack; no deployment.');
+  const prepared = await prepareProfile(targetPaths, installedVersion, profile, { repack: true });
+  try {
+    const total = profile.targets.reduce(
+      (sum, target) => sum + profile.appSpec[target.specKey].length,
+      profile.glmSpec.spans.length
+    );
+    console.log(`[CANDIDATE PASS] ${total}/${total} transforms, syntax, postconditions and repack validated.`);
+    console.log('[CANDIDATE ONLY] This is not a verified exact-version profile. Install/update remain disabled.');
+  } finally {
+    fs.rmSync(prepared.stageDir, { recursive: true, force: true });
+  }
+}
+
 async function probeCompatibility(paths, version) {
   let exactProfile;
   try {
@@ -1077,11 +1105,11 @@ function selfTest() {
     'verified 3.10.2 profile and all app targets load');
   assert(profiles.some(candidate => candidate.version === '3.11.2'),
     'verified 3.11.2 profile and checksums load');
-  const resolverProfiles = profiles.filter(candidate => candidate.version.startsWith('3.14.'));
-  assert(resolverProfiles.length >= 2 &&
+  const resolverProfiles = profiles.filter(candidate => candidate.transforms.length === 0);
+  assert(resolverProfiles.length >= 4 &&
     resolverProfiles.every(candidate => candidate.id === `zcode-${candidate.version}` &&
       candidate.targets.length === Object.keys(candidate.appSpec).length),
-    'verified 3.14.x resolver profiles load with matching identity');
+    'verified resolver profiles load with matching identity');
 
   let unknownProfileError;
   try {
@@ -2001,6 +2029,8 @@ function selfTest() {
     'async function Ojn(e){let t=iw(e.result.provider);' +
     'if(e.setUser(e.result.userInfo),e.setOAuthError(null),' +
     'await e.setProviderFamilyDomain(e.result.provider),e.refreshLatestModelProviderFamilySelection){}}' +
+    'function GroupPresentation(e){return e.key.startsWith(`family:`)||!!e.labelBadge?.trim()||' +
+    '(e.connectionOptions?.length??0)>0}' +
     'function Menu(sel,view,labels={}){return view.providers.flatMap(p=>{' +
     'if(!supports(sel,p.config.api?.type))return[];let parsed=parse(p.config.access),' +
     'presentation=parsed.success?present(p.providerId,parsed.data,labels):null;' +
@@ -2023,7 +2053,7 @@ function selfTest() {
     'return(0,$.jsx)(I5,{provider:H,onSave:d,...I,onDelete:()=>g(H),' +
     'onReorderModelIds:_?e=>_(H.providerId,e):void 0,onTestModel:v,' +
     'presetApiKeyUrl:ee,readOnlyEndpoints:!1,nameEditable:!0,onOpenPresetApiKey:ee?()=>{S(ee)}:void 0})}' +
-    'function Dlg(){return(0,$.jsxs)(`div`,{children:(0,$.jsx)(X,{variant:`outline`,children:`Close`})})}' +
+    'function Dlg(){return(0,$.jsxs)(`div`,{asChild:!0,children:(0,$.jsx)(X,{variant:`outline`,children:`Close`})})}' +
     'function Section(d,b,te,ee,J){let Je=(0,Q.useCallback)(async(e,t,n)=>{' +
     'if(!(t!==`bigmodel`&&t!==`zai`)){te(e),ee(e);try{' +
     'J.info(`[ModelProviderSection] 请求解绑 Coding Plan provider`,{presetId:e});' +
@@ -2046,6 +2076,7 @@ function selfTest() {
     { resolver: 'openai.fixedNavigation' },
     { resolver: 'openai.modelMenuFirst' },
     { resolver: 'openai.modelMenuPresentation' },
+    { resolver: 'openai.modelMenuFamilyPresentation' },
     { resolver: 'openai.hideManagedFields' },
   ];
   const iconResult = core.applySpansText(iconFixture, iconSpans, null, 'renderer.icons',
@@ -2064,7 +2095,10 @@ function selfTest() {
     iconResult.text.includes('e.providerId!=="zcode-openai-codex"') &&
     iconResult.text.includes('group.id===`preset`||group.id===`openai`') &&
     iconResult.text.includes('const zcodeOaiMenuProviders=[') &&
-    iconResult.text.includes('key:p.providerId==="zcode-openai-codex"?`family:openai`') &&
+    iconResult.text.includes('key:`registry-provider:${p.providerId}`,label:p.providerId===' +
+      '"zcode-openai-codex"?`OpenAI`:presentation?.label') &&
+    iconResult.text.includes('e.key.startsWith(`family:`)||e.items.some(zcodeOaiItem=>' +
+      'zcodeOaiItem.value?.startsWith(`custom:zcode-openai-codex:`))||') &&
     iconResult.text.includes('e.key===`custom:zcode-openai-codex`') &&
     iconResult.text.includes('`断开连接`:`连接 OpenAI`') &&
     iconResult.text.includes('provider:null,statusActive:!1') &&
@@ -2153,6 +2187,16 @@ function selfTest() {
     callbackResult.text.includes('e.result.provider!=="openai"&&await e.setProviderFamilyDomain(e.result.provider),') &&
     callbackResult.text.includes('e.refreshLatestModelProviderFamilySelection)'),
     'OAuth callback identity resolver guards setUser and the family domain for openai');
+  const guardedCallbackFixture = 'async function Ojn(e){e.setUser(e.result.userInfo),' +
+    'e.setOAuthError(null);let t=!0;try{await e.setProviderFamilyDomain(e.result.provider)}' +
+    'catch(n){t=!1,logger.warn(`domain`,{error:n})}if(e.refreshLatestModelProviderFamilySelection||!t){}}';
+  const guardedCallbackResult = core.applySpansText(guardedCallbackFixture, callbackSpans, null,
+    'renderer.icons', { strict: true, label: 'guarded-callback-fixture' });
+  assert(guardedCallbackResult.failures.length === 0 &&
+    guardedCallbackResult.text.includes('e.result.provider!=="openai"&&e.setUser(e.result.userInfo),') &&
+    guardedCallbackResult.text.includes('try{e.result.provider!=="openai"&&await e.setProviderFamilyDomain(e.result.provider)}') &&
+    guardedCallbackResult.text.includes('catch(n){t=!1,logger.warn(`domain`,{error:n})}'),
+    'OAuth callback identity resolver supports the guarded family-domain flow');
   let callbackFailedClosed = false;
   try {
     core.applySpansText('function q(){}', callbackSpans, null, 'renderer.icons',
@@ -2200,6 +2244,9 @@ function selfTest() {
 
 async function main() {
   if (SELF_TEST) return selfTest();
+  if (candidateIdx >= 0 && (!PROBE || !CANDIDATE_PROFILE || CANDIDATE_PROFILE.startsWith('--'))) {
+    throw new Error('--candidate-profile <verified-version> requires --probe and a valid template version');
+  }
   if (dirIdx >= 0 && !REQUESTED_INSTALL) throw new Error('--dir requires a path');
   if (PROBE && (DRY || NO_DEPLOY || RESTORE)) {
     throw new Error('--probe cannot be combined with --dry-run, --no-deploy, or --restore');
@@ -2219,6 +2266,7 @@ async function main() {
 
   const version = packageVersion(paths.ASAR);
   if (!version) throw new Error('could not read the installed ZCode package version');
+  if (PROBE && CANDIDATE_PROFILE) return probeCandidateProfile(paths, version, CANDIDATE_PROFILE);
   if (PROBE) return probeCompatibility(paths, version);
 
   const profile = loadProfile(version);
