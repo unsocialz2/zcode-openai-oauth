@@ -114,9 +114,10 @@ function extractAppImage(appImage, workDir) {
   return root;
 }
 
-function runPatcher(root, mode) {
+function runPatcher(root, mode, candidateVersion = null) {
   const patchArgs = [PATCHER, '--dir', root];
   if (mode === 'probe') patchArgs.push('--probe');
+  if (mode === 'probe-candidate') patchArgs.push('--probe', '--candidate-profile', candidateVersion);
   if (mode === 'dry-run') patchArgs.push('--dry-run');
   if (mode === 'prepare') patchArgs.push('--no-deploy');
   run(process.execPath, patchArgs, { cwd: PROJECT_ROOT });
@@ -254,6 +255,7 @@ function usage() {
   console.log(`ZCode OpenAI OAuth Linux/AppImage helper\n\n` +
 `Usage:\n` +
 `  node linux-appimage.js --probe [--appimage <path>]\n` +
+`  node linux-appimage.js --probe-candidate <profile-version> [--appimage <path>]\n` +
 `  node linux-appimage.js --dry-run [--appimage <path>]\n` +
 `  node linux-appimage.js --install [--appimage <path>] [--output-dir <path>] [--launch]\n` +
 `  node linux-appimage.js --update [--appimage <path>] [--output-dir <path>] [--launch]\n` +
@@ -262,6 +264,7 @@ function usage() {
 `  node linux-appimage.js --launch-only [--output-dir <path>]\n\n` +
 `Options:\n` +
 `  --appimage <path>   Source ZCode AppImage. Default: ~/.local/bin/zcode.AppImage\n` +
+`  --probe-candidate    Strictly test a known profile on an unknown version. Never installs.\n` +
 `  --output-dir <path> Patched extracted AppDir. Default: ~/.local/share/zcode-openai-oauth/ZCode.AppDir\n` +
 `  --launcher <path>   Launcher created on install/update. Default: ~/.local/bin/zcode-openai-oauth\n` +
 `  --no-launcher       Do not create/update the launcher\n` +
@@ -303,10 +306,10 @@ function main() {
     return;
   }
 
-  const modes = ['--probe', '--dry-run', '--install', '--update'].filter(flag => args.includes(flag));
+  const modes = ['--probe', '--probe-candidate', '--dry-run', '--install', '--update'].filter(flag => args.includes(flag));
   if (modes.length !== 1) {
     usage();
-    die('choose exactly one of --probe, --dry-run, --install, or --update');
+    die('choose exactly one of --probe, --probe-candidate, --dry-run, --install, or --update');
   }
 
   const requestedMode = modes[0].slice(2);
@@ -324,6 +327,14 @@ function main() {
     if (mode === 'probe') {
       runPatcher(root, 'probe');
       console.log('\n[OK] Linux AppImage compatibility probe passed. Source AppImage was untouched.');
+      return;
+    }
+
+    if (mode === 'probe-candidate') {
+      const templateVersion = argValue('--probe-candidate');
+      if (!templateVersion) die('--probe-candidate requires an exact verified profile version');
+      runPatcher(root, 'probe-candidate', templateVersion);
+      console.log('\n[CANDIDATE ONLY] Source AppImage and installed ZCode were not modified.');
       return;
     }
 
